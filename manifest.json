@@ -1,0 +1,26 @@
+{
+    "manifest_version": 3,
+    "name": "WebFormAutoFiller",
+    "version": "1.1",
+    "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'"
+    },
+    "description": "一个用于填充网页表单数据的Chrome插件。",
+    "permissions": [
+      "activeTab",
+      "scripting",
+      "storage"
+    ],
+    "action": {
+      "default_popup": "popup.html",
+      "default_icon": {
+        "16": "icon16.png",
+        "48": "icon48.png",
+        "128": "icon128.png"
+      }
+    },
+    "background": {
+      "service_worker": "background.js"
+    }
+  }
+  

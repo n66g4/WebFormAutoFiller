@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebFormAutoFiller</title>
+</head>
+<body>
+  <div class="container">
+    <h2>表单填充工具</h2>
+    
+    <div class="form-group">
+      <div class="config-type-header">
+        <label for="configSelect">📋 选择配置类型:</label>
+        <div class="config-type-actions">
+          <button id="importConfigTypeBtn" class="small-button" title="导入配置">📥</button>
+          <button id="exportConfigTypeBtn" class="small-button" title="导出配置">📤</button>
+          <button id="deleteConfigTypeBtn" class="small-button" title="删除配置">🗑️</button>
+        </div>
+      </div>
+      <input type="file" id="importConfigTypeInput" accept=".json" style="display: none;">
+      <select id="configSelect">
+        <option value="">加载中...</option>
+      </select>
+      <div id="configDescription" class="config-description"></div>
+      <div class="field-hint">选择要填充的表单类型（如：流程环节、法律信息等）</div>
+    </div>
+
+    <!-- 表单填写区域 -->
+    <div id="formInputMode" class="input-mode-content">
+      <!-- 保存/加载配置区域 -->
+      <div class="saved-configs-section">
+        <div class="saved-configs-header">
+          <label>💾 表单数据:</label>
+          <div class="saved-configs-actions">
+            <button id="saveConfigBtn" class="small-button" title="保存表单数据">💾</button>
+            <button id="importConfigBtn" class="small-button" title="导入表单数据">📥</button>
+            <button id="exportConfigBtn" class="small-button" title="导出表单数据">📤</button>
+            <button id="deleteConfigBtn" class="small-button" title="删除表单数据">🗑️</button>
+          </div>
+        </div>
+        <input type="file" id="importFileInput" accept=".json" style="display: none;">
+        <select id="savedConfigsSelect" class="saved-configs-select">
+          <option value="">-- 选择已保存的表单数据（快速填充） --</option>
+        </select>
+        <div class="field-hint">选择之前保存的表单数据，可快速填充到下方表单中</div>
+      </div>
+
+      <!-- 操作按钮区域 -->
+      <div class="action-buttons-section">
+        <button id="submitButton" class="submit-button">开始填充</button>
+        <div class="help-link">
+          <a id="configParserLink" href="#" target="_blank">🔧 配置解析工具</a>
+        </div>
+      </div>
+      
+      <div id="formFields" class="form-fields">
+        <!-- 动态生成的表单字段 -->
+      </div>
+    </div>
+
+    <!-- 成功/错误信息显示区域 -->
+    <div id="message" class="message"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

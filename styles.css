@@ -1,0 +1,390 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+  padding: 12px;
+  min-width: 320px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #333;
+}
+
+.container {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #2d3748;
+  text-align: center;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5568;
+  margin-bottom: 5px;
+}
+
+select {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  background-color: #fff;
+  color: #2d3748;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+select:hover {
+  border-color: #cbd5e0;
+}
+
+select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.config-description {
+  margin-top: 5px;
+  font-size: 11px;
+  color: #718096;
+  font-style: italic;
+  padding: 6px 8px;
+  background-color: #f7fafc;
+  border-radius: 4px;
+  border-left: 2px solid #667eea;
+}
+
+input[type="file"] {
+  width: 100%;
+  padding: 10px;
+  border: 2px dashed #cbd5e0;
+  border-radius: 8px;
+  background-color: #f7fafc;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+input[type="file"]:hover {
+  border-color: #a0aec0;
+  background-color: #edf2f7;
+}
+
+input[type="file"]:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.submit-button {
+  width: 100%;
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-top: 8px;
+  box-shadow: 0 3px 12px rgba(102, 126, 234, 0.3);
+}
+
+.submit-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.submit-button:active {
+  transform: translateY(0);
+}
+
+.submit-button:disabled {
+  background: #cbd5e0;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.message {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-success {
+  background-color: #c6f6d5;
+  color: #22543d;
+  border-left: 4px solid #48bb78;
+}
+
+.message-error {
+  background-color: #fed7d7;
+  color: #742a2a;
+  border-left: 4px solid #f56565;
+}
+
+.message-info {
+  background-color: #bee3f8;
+  color: #2c5282;
+  border-left: 4px solid #4299e1;
+}
+
+/* 文件输入样式优化 */
+input[type="file"]::file-selector-button {
+  padding: 8px 16px;
+  margin-right: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+input[type="file"]::file-selector-button:hover {
+  opacity: 0.9;
+  transform: scale(1.05);
+}
+
+/* 操作按钮区域 */
+.action-buttons-section {
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.action-buttons-section .submit-button {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.help-link {
+  text-align: center;
+  margin-top: 0;
+}
+
+.help-link a {
+  color: #667eea;
+  text-decoration: none;
+  font-size: 11px;
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.help-link a:hover {
+  background-color: #f7fafc;
+  color: #764ba2;
+}
+
+/* 输入方式选择器 */
+.input-mode-selector {
+  display: flex;
+  gap: 20px;
+  margin-top: 8px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.radio-label input[type="radio"] {
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.input-mode-content {
+  margin-top: 10px;
+}
+
+/* 表单字段 */
+.form-fields {
+  max-height: 350px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.form-field {
+  margin-bottom: 10px;
+}
+
+.form-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4a5568;
+  margin-bottom: 4px;
+}
+
+.form-field input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 5px;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.form-field input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.file-hint {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 6px;
+  font-style: italic;
+}
+
+/* 滚动条样式 */
+.form-fields::-webkit-scrollbar {
+  width: 6px;
+}
+
+.form-fields::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.form-fields::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+.form-fields::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* 已保存配置区域 */
+.saved-configs-section {
+  margin-bottom: 12px;
+  padding: 10px;
+  background: linear-gradient(135deg, #edf2f7 0%, #f7fafc 100%);
+  border-radius: 6px;
+  border: 1.5px solid #cbd5e0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.saved-configs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.saved-configs-header label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0;
+}
+
+.saved-configs-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.small-button {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.small-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.small-button:active {
+  transform: translateY(0);
+}
+
+.saved-configs-select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 5px;
+  font-size: 12px;
+  background-color: #fff;
+  color: #2d3748;
+  cursor: pointer;
+}
+
+.saved-configs-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: #718096;
+  margin-top: 4px;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+/* 配置类型操作区域 */
+.config-type-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.config-type-header label {
+  margin: 0;
+}
+
+.config-type-actions {
+  display: flex;
+  gap: 4px;
+}
