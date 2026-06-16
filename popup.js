@@ -1,17 +1,27 @@
 // 全局变量
 let configsIndex = null;
 let currentConfig = null;
+let lastFillResult = null;
+let lastLiveMeta = {};
 
-// 初始化：加载配置索引
 document.addEventListener('DOMContentLoaded', () => {
-  loadConfigsIndex();
-  setupSavedConfigs();
-  loadSavedConfigsList();
-  setupConfigParserLink();
-  setupConfigTypeActions();
+  init();
 });
 
-// 设置配置解析工具链接
+async function init() {
+  setupConfigParserLink();
+  setupSavedConfigs();
+  setupConfigTypeActions();
+  setupConfigSelectListener();
+  setupRecording();
+  setupDiagnostics();
+
+  await loadConfigsIndex();
+  await loadSavedConfigsList();
+  await updateSubmitButtonState();
+  await updateRecordingButtonState();
+}
+
 function setupConfigParserLink() {
   const link = document.getElementById('configParserLink');
   if (link && chrome.runtime) {
@@ -19,44 +29,514 @@ function setupConfigParserLink() {
   }
 }
 
+function setupConfigSelectListener() {
+  const select = document.getElementById('configSelect');
+  if (select) {
+    select.addEventListener('change', (e) => {
+      updateConfigDescription(e.target.value);
+      updateRecordingButtonLabel();
+    });
+  }
+}
 
-// 生成表单字段
-function generateFormFields(savedData = null) {
-  if (!currentConfig) return;
-  
-  const formFields = document.getElementById('formFields');
-  formFields.innerHTML = '';
-  
-  // 按配置的 mappings 顺序生成字段
-  Object.keys(currentConfig.mappings).forEach(key => {
-    const chineseName = currentConfig.mappings[key];
-    const fieldDiv = document.createElement('div');
-    fieldDiv.className = 'form-field';
-    
-    const label = document.createElement('label');
-    label.textContent = chineseName;
-    label.setAttribute('for', `field_${key}`);
-    
-    // 判断字段类型（时限字段可能是数字）
-    const isNumber = key.includes('T') && (key.includes('时限') || key.endsWith('T'));
+function getFieldMeta(key, chineseName, liveMeta = null) {
+  let meta = WebFormFieldType.resolveMeta(currentConfig, key, chineseName);
+  const live = liveMeta?.[chineseName] || liveMeta?.[key];
+
+  if (live) {
+    if (live.type === WebFormFieldType.TYPES.RADIO && meta.type === WebFormFieldType.TYPES.DATE) {
+      // 页面误识别为单选时，保留配置中的日期类型
+    } else if (live.options?.length) {
+      meta = { type: live.type || meta.type, options: live.options };
+    } else if (live.type && live.type !== WebFormFieldType.TYPES.TEXT) {
+      meta = { ...meta, type: live.type };
+    }
+  }
+
+  if (
+    !meta.options?.length
+    && meta.type === WebFormFieldType.TYPES.RADIO
+    && /是否|有没有|是否为|与否/.test(chineseName)
+  ) {
+    meta = { ...meta, options: ['是', '否'] };
+  }
+
+  if (meta.options?.length && currentConfig) {
+    if (!currentConfig.fieldMeta) currentConfig.fieldMeta = {};
+    currentConfig.fieldMeta[key] = {
+      type: meta.type,
+      options: meta.options
+    };
+  }
+
+  return meta;
+}
+
+async function fetchLiveFieldMetaFromPage() {
+  const tab = await getActiveTab();
+  if (!tab || !isFillableUrl(tab.url) || !currentConfig?.mappings) {
+    return {};
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ['shared/field-type.js']
+    });
+
+    const frameResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: (mappings, fieldMappings, fieldMeta) => {
+        const docs = WebFormFieldType.getSearchableDocuments(document);
+        const out = {};
+
+        Object.entries(mappings).forEach(([key, label]) => {
+          const locator = fieldMappings[label];
+          const configMeta = fieldMeta?.[key] || null;
+          let best = null;
+
+          for (const doc of docs) {
+            const meta = WebFormFieldType.probeFieldMeta(label, locator, doc, configMeta);
+            if (meta.options?.length) {
+              best = meta;
+              break;
+            }
+            if (!best && meta.type !== WebFormFieldType.TYPES.TEXT) {
+              best = meta;
+            }
+          }
+
+          if (best) {
+            out[label] = best;
+            out[key] = best;
+          }
+        });
+
+        return out;
+      },
+      args: [currentConfig.mappings, currentConfig.fieldMappings, currentConfig.fieldMeta || {}]
+    });
+
+    const liveMeta = {};
+    frameResults.forEach((frame) => {
+      const partial = frame?.result || {};
+      Object.entries(partial).forEach(([key, meta]) => {
+        if (!liveMeta[key] || (meta.options?.length && !liveMeta[key].options?.length)) {
+          liveMeta[key] = meta;
+        }
+      });
+    });
+
+    return liveMeta;
+  } catch (error) {
+    console.warn('从页面读取字段选项失败:', error);
+    return {};
+  }
+}
+
+function getPopupFieldStates() {
+  const states = [];
+  document.querySelectorAll('#formFields .form-field').forEach((fieldDiv) => {
+    const key = fieldDiv.dataset.fieldKey;
+    if (!key) return;
+    states.push({
+      key,
+      label: currentConfig?.mappings?.[key] || key,
+      popupType: fieldDiv.dataset.fieldType || 'text',
+      hasRadioUi: !!fieldDiv.querySelector('.choice-group-radio'),
+      hasSelectUi: !!fieldDiv.querySelector('select'),
+      hasTextFallback: !!fieldDiv.querySelector('.field-hint'),
+      valuePreview: collectFormData()[key] || ''
+    });
+  });
+  return states;
+}
+
+async function collectDiagnosticsReport() {
+  const tab = await getActiveTab();
+  const report = {
+    generatedAt: new Date().toISOString(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    tab: tab ? { url: tab.url, title: tab.title } : null,
+    config: currentConfig ? {
+      id: currentConfig.id,
+      name: currentConfig.name,
+      mappings: currentConfig.mappings,
+      fieldMeta: currentConfig.fieldMeta || {},
+      fieldMappings: currentConfig.fieldMappings || {}
+    } : null,
+    popupFields: getPopupFieldStates(),
+    liveMeta: lastLiveMeta,
+    lastFillResult,
+    pageProbe: null,
+    errors: []
+  };
+
+  if (!tab || !isFillableUrl(tab.url)) {
+    report.errors.push('当前标签页不是可填充页面，请打开目标表单页后重试');
+    return report;
+  }
+
+  if (!currentConfig?.mappings) {
+    report.errors.push('未选择配置');
+    return report;
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      files: ['shared/field-type.js', 'shared/diagnostics.js']
+    });
+
+    const frameResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: (mappings, fieldMappings, fieldMeta) => {
+        return WebFormDiagnostics.diagnoseAll(mappings, fieldMappings, fieldMeta);
+      },
+      args: [currentConfig.mappings, currentConfig.fieldMappings, currentConfig.fieldMeta || {}]
+    });
+
+    report.pageProbe = frameResults
+      .map((frame) => ({
+        frameId: frame.frameId,
+        ...(frame.result || {})
+      }))
+      .filter((item) => item.summary || item.documents);
+  } catch (error) {
+    report.errors.push(`页面探测失败: ${error.message}`);
+  }
+
+  return report;
+}
+
+function formatDiagnosticsReport(report) {
+  const lines = [];
+  lines.push('=== WebFormAutoFiller 诊断报告 ===');
+  lines.push(`时间: ${report.generatedAt}`);
+  lines.push(`版本: ${report.extensionVersion}`);
+  lines.push(`页面: ${report.tab?.url || '无'}`);
+  lines.push(`配置: ${report.config?.name || '无'} (${report.config?.id || '-'})`);
+  lines.push('');
+
+  if (report.errors.length) {
+    lines.push('--- 错误 ---');
+    report.errors.forEach((err) => lines.push(`- ${err}`));
+    lines.push('');
+  }
+
+  lines.push('--- Popup 字段状态 ---');
+  report.popupFields.forEach((field) => {
+    lines.push(
+      `[${field.key}] ${field.label} | type=${field.popupType} | radioUI=${field.hasRadioUi} | textFallback=${field.hasTextFallback} | value=${field.valuePreview || '(空)'}`
+    );
+  });
+  lines.push('');
+
+  if (report.lastFillResult) {
+    lines.push('--- 上次填充结果 ---');
+    const r = report.lastFillResult;
+    lines.push(`成功 ${r.successCount} / 失败 ${r.errorCount}`);
+    [...(r.errors || []), ...(r.skipped || [])].forEach((item) => {
+      lines.push(`  ${item.field}: ${item.reason}`);
+    });
+    lines.push('');
+  }
+
+  report.pageProbe?.forEach((frame) => {
+    lines.push(`--- 页面探测 frameId=${frame.frameId} ---`);
+    lines.push(`URL: ${frame.pageUrl || frame.doc || '-'}`);
+    frame.summary?.forEach((field) => {
+      lines.push(`字段: ${field.label} (${field.key})`);
+      lines.push(`  配置 fieldMeta: ${JSON.stringify(field.configMeta)}`);
+      lines.push(`  探测 probedMeta: ${JSON.stringify(field.probedMeta)}`);
+      lines.push(`  选项(span): ${(field.optionLabelsFromSpans || []).join(', ') || '(无)'}`);
+      lines.push(`  匹配表单项数: ${field.matchedFormItemCount}`);
+      if (field.issues?.length) {
+        lines.push(`  问题: ${field.issues.join('；')}`);
+      }
+
+      const detail = frame.documents
+        ?.flatMap((doc) => doc.fields || [])
+        .find((f) => f.key === field.key);
+      if (detail?.matchedFormItems?.length) {
+        detail.matchedFormItems.forEach((item, index) => {
+          lines.push(`  表单项#${index + 1}: label="${item.labelText}" radio=${item.hasRadioGroup} options=${(item.radioLabels || []).join(', ')}`);
+        });
+      }
+      if (detail?.steps?.length) {
+        detail.steps.forEach((step) => {
+          lines.push(`  步骤 ${step.step}: found=${step.found} ${step.element ? JSON.stringify(step.element) : ''}`);
+        });
+      }
+    });
+    lines.push('');
+  });
+
+  lines.push('--- JSON（完整数据）---');
+  lines.push(JSON.stringify(report, null, 2));
+  return lines.join('\n');
+}
+
+function setupDiagnostics() {
+  const btn = document.getElementById('copyDiagnosticsBtn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const output = document.getElementById('diagnosticsOutput');
+    btn.disabled = true;
+    const prevText = btn.textContent;
+    btn.textContent = '生成中…';
+
+    try {
+      const report = await collectDiagnosticsReport();
+      const text = formatDiagnosticsReport(report);
+      if (output) {
+        output.hidden = false;
+        output.value = text;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        showMessage('诊断日志已复制到剪贴板', 'success');
+      } catch (clipboardError) {
+        if (output) output.select();
+        showMessage('日志已生成，请手动复制下方文本框内容', 'info');
+      }
+    } catch (error) {
+      console.error('生成诊断日志失败:', error);
+      showMessage('生成诊断日志失败: ' + error.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prevText;
+    }
+  });
+}
+
+function parseSavedMultiValue(value) {
+  if (Array.isArray(value)) return value;
+  const text = String(value == null ? '' : value).trim();
+  if (!text) return [];
+  if (/[,，;；、|]/.test(text)) {
+    return text.split(/[,，;；、|]/).map((part) => part.trim()).filter(Boolean);
+  }
+  return [text];
+}
+
+function isValueSelected(savedValue, optionValue) {
+  if (savedValue == null || savedValue === '') return false;
+  const target = String(savedValue).trim().toLowerCase();
+  const current = String(optionValue).trim().toLowerCase();
+  return target === current || target.includes(current) || current.includes(target);
+}
+
+function createTextControl(key, chineseName, savedValue, placeholder) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = `field_${key}`;
+  input.name = key;
+  input.placeholder = placeholder || `请输入${chineseName}`;
+  if (savedValue !== undefined && savedValue !== null) {
+    input.value = savedValue;
+  }
+  return input;
+}
+
+function createFieldControl(key, chineseName, meta, savedValue) {
+  const { type, options } = meta;
+
+  if (type === WebFormFieldType.TYPES.TEXTAREA) {
+    const textarea = document.createElement('textarea');
+    textarea.id = `field_${key}`;
+    textarea.name = key;
+    textarea.rows = 3;
+    textarea.placeholder = `请输入${chineseName}`;
+    if (savedValue !== undefined && savedValue !== null) textarea.value = savedValue;
+    return textarea;
+  }
+
+  if (type === WebFormFieldType.TYPES.NUMBER) {
     const input = document.createElement('input');
-    input.type = isNumber ? 'number' : 'text';
+    input.type = 'number';
     input.id = `field_${key}`;
     input.name = key;
     input.placeholder = `请输入${chineseName}`;
-    
-    // 如果有保存的数据，填充到字段中
-    if (savedData && savedData[key] !== undefined) {
-      input.value = savedData[key];
+    if (savedValue !== undefined && savedValue !== null) input.value = savedValue;
+    return input;
+  }
+
+  if (type === WebFormFieldType.TYPES.DATE) {
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.id = `field_${key}`;
+    input.name = key;
+    if (savedValue) {
+      const normalized = String(savedValue).replace(/\//g, '-').slice(0, 10);
+      input.value = normalized;
     }
-    
+    return input;
+  }
+
+  if (type === WebFormFieldType.TYPES.CHECKBOX) {
+    const wrap = document.createElement('label');
+    wrap.className = 'choice-item choice-item-checkbox';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.id = `field_${key}`;
+    input.name = key;
+    input.checked = ['true', '1', 'yes', 'on', '是'].includes(String(savedValue || '').toLowerCase());
+    wrap.appendChild(input);
+    wrap.appendChild(document.createTextNode('是'));
+    return wrap;
+  }
+
+  if (type === WebFormFieldType.TYPES.RADIO) {
+    if (!options.length) {
+      const input = createTextControl(key, chineseName, savedValue, `请输入${chineseName}（单选项文字）`);
+      const wrap = document.createDocumentFragment();
+      const hint = document.createElement('p');
+      hint.className = 'field-hint';
+      hint.textContent = '未从页面读到选项，请打开目标表单页后重新选择配置';
+      wrap.appendChild(hint);
+      wrap.appendChild(input);
+      return wrap;
+    }
+    const group = document.createElement('div');
+    group.className = 'choice-group choice-group-radio';
+    options.forEach((option, index) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'choice-item';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `field_${key}`;
+      input.value = option;
+      input.id = `field_${key}_${index}`;
+      if (isValueSelected(savedValue, option)) input.checked = true;
+      wrap.appendChild(input);
+      wrap.appendChild(document.createTextNode(option));
+      group.appendChild(wrap);
+    });
+    return group;
+  }
+
+  if (type === WebFormFieldType.TYPES.SELECT) {
+    if (!options.length) {
+      return createTextControl(key, chineseName, savedValue, `请输入${chineseName}（下拉选项文字）`);
+    }
+    const select = document.createElement('select');
+    select.id = `field_${key}`;
+    select.name = key;
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = `请选择${chineseName}`;
+    select.appendChild(placeholder);
+    options.forEach((option) => {
+      const opt = document.createElement('option');
+      opt.value = option;
+      opt.textContent = option;
+      if (isValueSelected(savedValue, option)) opt.selected = true;
+      select.appendChild(opt);
+    });
+    return select;
+  }
+
+  if (type === WebFormFieldType.TYPES.MULTISELECT) {
+    if (!options.length) {
+      return createTextControl(
+        key,
+        chineseName,
+        savedValue,
+        `请输入${chineseName}（多个选项用逗号分隔）`
+      );
+    }
+    const selectedValues = parseSavedMultiValue(savedValue);
+    const group = document.createElement('div');
+    group.className = 'choice-group choice-group-checkbox';
+    options.forEach((option, index) => {
+      const wrap = document.createElement('label');
+      wrap.className = 'choice-item';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.name = `field_${key}`;
+      input.value = option;
+      input.id = `field_${key}_${index}`;
+      input.checked = selectedValues.some((value) => isValueSelected(value, option));
+      wrap.appendChild(input);
+      wrap.appendChild(document.createTextNode(option));
+      group.appendChild(wrap);
+    });
+    return group;
+  }
+
+  return createTextControl(key, chineseName, savedValue);
+}
+
+function collectFormData() {
+  const formData = {};
+
+  document.querySelectorAll('#formFields .form-field').forEach((fieldDiv) => {
+    const key = fieldDiv.dataset.fieldKey;
+    const type = fieldDiv.dataset.fieldType || WebFormFieldType.TYPES.TEXT;
+    if (!key) return;
+
+    if (type === WebFormFieldType.TYPES.RADIO) {
+      const checked = fieldDiv.querySelector(`input[type="radio"][name="field_${key}"]:checked`);
+      formData[key] = checked ? checked.value : (fieldDiv.querySelector(`#field_${key}`)?.value || '');
+      return;
+    }
+
+    if (type === WebFormFieldType.TYPES.MULTISELECT) {
+      const checked = fieldDiv.querySelectorAll(`input[type="checkbox"][name="field_${key}"]:checked`);
+      if (checked.length) {
+        formData[key] = Array.from(checked).map((item) => item.value).join(',');
+        return;
+      }
+      formData[key] = fieldDiv.querySelector(`#field_${key}`)?.value?.trim() || '';
+      return;
+    }
+
+    if (type === WebFormFieldType.TYPES.CHECKBOX) {
+      const checkbox = fieldDiv.querySelector(`#field_${key}`);
+      formData[key] = checkbox?.checked ? '是' : '否';
+      return;
+    }
+
+    const control = fieldDiv.querySelector(`#field_${key}`);
+    formData[key] = control ? String(control.value || '').trim() : '';
+  });
+
+  return formData;
+}
+
+async function generateFormFields(savedData = null) {
+  if (!currentConfig) return;
+
+  const formFields = document.getElementById('formFields');
+  formFields.innerHTML = '<p class="field-hint">正在从页面读取字段类型...</p>';
+
+  const liveMeta = await fetchLiveFieldMetaFromPage();
+  lastLiveMeta = liveMeta;
+  formFields.innerHTML = '';
+
+  Object.keys(currentConfig.mappings).forEach((key) => {
+    const chineseName = currentConfig.mappings[key];
+    const meta = getFieldMeta(key, chineseName, liveMeta);
+    const fieldDiv = document.createElement('div');
+    fieldDiv.className = 'form-field';
+    fieldDiv.dataset.fieldKey = key;
+    fieldDiv.dataset.fieldType = meta.type;
+
+    const label = document.createElement('label');
+    label.textContent = chineseName;
+    label.setAttribute('for', `field_${key}`);
+
+    const savedValue = savedData && savedData[key] !== undefined ? savedData[key] : '';
+    const control = createFieldControl(key, chineseName, meta, savedValue);
+
     fieldDiv.appendChild(label);
-    fieldDiv.appendChild(input);
+    fieldDiv.appendChild(control);
     formFields.appendChild(fieldDiv);
   });
 }
 
-// 设置已保存配置的功能
 function setupSavedConfigs() {
   const saveBtn = document.getElementById('saveConfigBtn');
   const importBtn = document.getElementById('importConfigBtn');
@@ -64,31 +544,14 @@ function setupSavedConfigs() {
   const exportBtn = document.getElementById('exportConfigBtn');
   const deleteBtn = document.getElementById('deleteConfigBtn');
   const select = document.getElementById('savedConfigsSelect');
-  
-  if (saveBtn) {
-    saveBtn.addEventListener('click', saveCurrentFormData);
-  }
-  
-  if (importBtn) {
-    importBtn.addEventListener('click', () => {
-      importFileInput.click();
-    });
-  }
-  
-  if (importFileInput) {
-    importFileInput.addEventListener('change', handleImportFile);
-  }
-  
-  if (exportBtn) {
-    exportBtn.addEventListener('click', exportSelectedConfig);
-  }
-  
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', deleteSelectedConfig);
-  }
-  
+
+  if (saveBtn) saveBtn.addEventListener('click', saveCurrentFormData);
+  if (importBtn) importBtn.addEventListener('click', () => importFileInput.click());
+  if (importFileInput) importFileInput.addEventListener('change', handleImportFile);
+  if (exportBtn) exportBtn.addEventListener('click', exportSelectedConfig);
+  if (deleteBtn) deleteBtn.addEventListener('click', deleteSelectedConfig);
+
   if (select) {
-    // 选择配置时自动加载
     select.addEventListener('change', (e) => {
       if (e.target.value) {
         loadConfigById(e.target.value);
@@ -97,83 +560,67 @@ function setupSavedConfigs() {
   }
 }
 
-// 保存当前表单数据
 async function saveCurrentFormData() {
   if (!currentConfig) {
     showMessage('请先选择一个配置', 'error');
     return;
   }
-  
+
   const configSelect = document.getElementById('configSelect');
   const configId = configSelect.value;
   if (!configId) {
     showMessage('请先选择一个配置', 'error');
     return;
   }
-  
-  // 获取表单数据
-  const formData = {};
-  const fields = document.querySelectorAll('#formFields input');
+
+  const formData = collectFormData();
   let hasData = false;
-  
-  fields.forEach(field => {
-    const value = field.value.trim();
-    if (value) hasData = true;
-    formData[field.name] = value;
+
+  Object.values(formData).forEach((value) => {
+    if (String(value).trim()) hasData = true;
   });
-  
+
   if (!hasData) {
     showMessage('请至少填写一个字段', 'error');
     return;
   }
-  
-  // 获取配置名称
+
   const configName = prompt('请输入配置名称:', `${currentConfig.name}_${new Date().toLocaleDateString()}`);
-  if (!configName || !configName.trim()) {
-    return;
-  }
-  
-  // 保存到 Chrome Storage
+  if (!configName || !configName.trim()) return;
+
   const savedConfig = {
     id: Date.now().toString(),
     name: configName.trim(),
-    configId: configId,
+    configId,
     configName: currentConfig.name,
     data: formData,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
-  
+
   try {
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
     savedConfigs.push(savedConfig);
-    
-    await chrome.storage.local.set({ savedConfigs: savedConfigs });
-    
+    await WebFormStorage.saveSavedFormDataList(savedConfigs);
     showMessage('配置保存成功', 'success');
-    loadSavedConfigsList();
+    await loadSavedConfigsList();
   } catch (error) {
     console.error('保存配置失败:', error);
     showMessage('保存配置失败: ' + error.message, 'error');
   }
 }
 
-// 加载已保存配置列表
 async function loadSavedConfigsList() {
   const select = document.getElementById('savedConfigsSelect');
   if (!select) return;
-  
+
   try {
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
-    
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
     select.innerHTML = '<option value="">-- 选择已保存的配置 --</option>';
-    
-    // 按更新时间倒序排列
+
     savedConfigs.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    
-    savedConfigs.forEach(config => {
+
+    savedConfigs.forEach((config) => {
       const option = document.createElement('option');
       option.value = config.id;
       const date = new Date(config.updatedAt).toLocaleString('zh-CN', {
@@ -190,64 +637,48 @@ async function loadSavedConfigsList() {
   }
 }
 
-// 根据 ID 加载配置
 async function loadConfigById(configId) {
   try {
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
-    const config = savedConfigs.find(c => c.id === configId);
-    
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
+    const config = savedConfigs.find((c) => c.id === configId);
+
     if (!config) {
       showMessage('配置不存在', 'error');
       return;
     }
-  
-    // 切换到对应的配置类型
+
     const configSelect = document.getElementById('configSelect');
     configSelect.value = config.configId;
-    
-    // 加载配置并生成表单
     await updateConfigDescription(config.configId);
-    
-    // 等待配置加载完成后再填充数据
-    setTimeout(() => {
-      generateFormFields(config.data);
-      showMessage(`已加载配置: ${config.name}`, 'success');
-    }, 100);
-    
+    await generateFormFields(config.data);
+    showMessage(`已加载配置: ${config.name}`, 'success');
   } catch (error) {
     console.error('加载配置失败:', error);
     showMessage('加载配置失败: ' + error.message, 'error');
   }
 }
 
-// 删除选中的配置
 async function deleteSelectedConfig() {
   const select = document.getElementById('savedConfigsSelect');
   if (!select || !select.value) {
     showMessage('请先选择一个要删除的配置', 'error');
     return;
   }
-  
-  // 获取配置名称用于确认
-  const result = await chrome.storage.local.get(['savedConfigs']);
-  const savedConfigs = result.savedConfigs || [];
-  const config = savedConfigs.find(c => c.id === select.value);
-  
+
+  const savedConfigs = await WebFormStorage.getSavedFormDataList();
+  const config = savedConfigs.find((c) => c.id === select.value);
+
   if (!config) {
     showMessage('配置不存在', 'error');
     return;
   }
-  
-  // 确认删除
+
   if (confirm(`确定要删除配置 "${config.name}" 吗？`)) {
     await deleteSavedConfig(select.value);
-    // 清空选择
     select.value = '';
   }
 }
 
-// 处理导入文件
 async function handleImportFile(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -256,20 +687,16 @@ async function handleImportFile(event) {
     const text = await file.text();
     const importData = JSON.parse(text);
 
-    // 验证导入数据格式
     if (!importData.name || !importData.data) {
       throw new Error('导入文件格式不正确：缺少必要字段');
     }
 
-    // 检查是否有配置类型信息
     if (!importData.configType) {
-      // 尝试从当前选择的配置获取类型
       const configSelect = document.getElementById('configSelect');
       if (!configSelect.value) {
         throw new Error('请先选择配置类型，或确保导入文件包含配置类型信息');
       }
-      
-      const config = configsIndex.configs.find(c => c.id === configSelect.value);
+      const config = configsIndex.configs.find((c) => c.id === configSelect.value);
       if (config) {
         importData.configType = config.name;
         importData.configId = config.id;
@@ -277,14 +704,12 @@ async function handleImportFile(event) {
         throw new Error('无法确定配置类型');
       }
     } else {
-      // 根据配置类型名称查找配置 ID
-      const config = configsIndex.configs.find(c => c.name === importData.configType);
+      const config = configsIndex.configs.find((c) => c.name === importData.configType);
       if (config) {
         importData.configId = config.id;
       }
     }
 
-    // 构建保存的配置对象
     const savedConfig = {
       id: Date.now().toString(),
       name: importData.name,
@@ -295,28 +720,19 @@ async function handleImportFile(event) {
       updatedAt: new Date().toISOString()
     };
 
-    // 保存到 Chrome Storage
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
     savedConfigs.push(savedConfig);
-
-    await chrome.storage.local.set({ savedConfigs: savedConfigs });
+    await WebFormStorage.saveSavedFormDataList(savedConfigs);
 
     showMessage(`成功导入配置: ${savedConfig.name}`, 'success');
-    loadSavedConfigsList();
-
-    // 清空文件输入
+    await loadSavedConfigsList();
     event.target.value = '';
 
-    // 可选：自动加载导入的配置
-    setTimeout(() => {
-      const select = document.getElementById('savedConfigsSelect');
-      if (select) {
-        select.value = savedConfig.id;
-        loadConfigById(savedConfig.id);
-      }
-    }, 100);
-
+    const select = document.getElementById('savedConfigsSelect');
+    if (select) {
+      select.value = savedConfig.id;
+      await loadConfigById(savedConfig.id);
+    }
   } catch (error) {
     console.error('导入配置失败:', error);
     showMessage('导入配置失败: ' + error.message, 'error');
@@ -324,7 +740,6 @@ async function handleImportFile(event) {
   }
 }
 
-// 导出选中的配置
 async function exportSelectedConfig() {
   const select = document.getElementById('savedConfigsSelect');
   if (!select || !select.value) {
@@ -333,16 +748,14 @@ async function exportSelectedConfig() {
   }
 
   try {
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
-    const config = savedConfigs.find(c => c.id === select.value);
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
+    const config = savedConfigs.find((c) => c.id === select.value);
 
     if (!config) {
       showMessage('配置不存在', 'error');
       return;
     }
 
-    // 构建导出数据
     const exportData = {
       name: config.name,
       configType: config.configName,
@@ -351,16 +764,7 @@ async function exportSelectedConfig() {
       data: config.data
     };
 
-    // 生成 JSON 文件
-    const jsonText = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonText], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${config.name}_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-
+    downloadJson(exportData, `${config.name}_${new Date().toISOString().split('T')[0]}.json`);
     showMessage('配置导出成功', 'success');
   } catch (error) {
     console.error('导出配置失败:', error);
@@ -368,61 +772,22 @@ async function exportSelectedConfig() {
   }
 }
 
-// 删除已保存的配置
 async function deleteSavedConfig(configId) {
   try {
-    const result = await chrome.storage.local.get(['savedConfigs']);
-    const savedConfigs = result.savedConfigs || [];
-    const filtered = savedConfigs.filter(c => c.id !== configId);
-    
-    await chrome.storage.local.set({ savedConfigs: filtered });
+    const savedConfigs = await WebFormStorage.getSavedFormDataList();
+    const filtered = savedConfigs.filter((c) => c.id !== configId);
+    await WebFormStorage.saveSavedFormDataList(filtered);
     showMessage('配置已删除', 'success');
-    loadSavedConfigsList();
+    await loadSavedConfigsList();
   } catch (error) {
     console.error('删除配置失败:', error);
     showMessage('删除配置失败: ' + error.message, 'error');
   }
 }
 
-// 加载配置索引
 async function loadConfigsIndex() {
   try {
-    // 优先从 Chrome Storage 加载
-    const result = await chrome.storage.local.get(['configsIndex']);
-    if (result.configsIndex) {
-      configsIndex = result.configsIndex;
-      populateConfigSelect();
-      // 迁移现有配置文件到 Storage（一次性操作）
-      migrateConfigsToStorage();
-      return;
-    }
-
-    // 如果 Storage 中没有，尝试从文件加载（如果文件不存在，创建空索引）
-    try {
-      const response = await fetch('configs-index.json');
-      if (response.ok) {
-        configsIndex = await response.json();
-        // 保存到 Chrome Storage
-        await chrome.storage.local.set({ configsIndex: configsIndex });
-        // 迁移现有配置文件到 Storage（一次性操作）
-        migrateConfigsToStorage();
-      } else {
-        // 文件不存在，创建空索引
-        configsIndex = {
-          configs: [],
-          default: null
-        };
-        await chrome.storage.local.set({ configsIndex: configsIndex });
-      }
-    } catch (error) {
-      // 文件加载失败，创建空索引
-      configsIndex = {
-        configs: [],
-        default: null
-      };
-      await chrome.storage.local.set({ configsIndex: configsIndex });
-    }
-    
+    configsIndex = await WebFormStorage.getConfigsIndex();
     populateConfigSelect();
   } catch (error) {
     console.error('加载配置索引失败:', error);
@@ -430,267 +795,313 @@ async function loadConfigsIndex() {
   }
 }
 
-// 迁移现有配置文件到 Chrome Storage（一次性操作）
-async function migrateConfigsToStorage() {
-  if (!configsIndex || !configsIndex.configs) return;
-  
-  try {
-    const storageData = {};
-    let hasNewConfigs = false;
-    
-    // 检查每个配置是否已在 Storage 中
-    for (const config of configsIndex.configs) {
-      const storageKey = `config_${config.id}`;
-      const result = await chrome.storage.local.get([storageKey]);
-      
-      // 如果 Storage 中没有，从文件系统加载
-      if (!result[storageKey]) {
-        try {
-          const response = await fetch(config.file);
-          if (response.ok) {
-            const configData = await response.json();
-            storageData[storageKey] = configData;
-            hasNewConfigs = true;
-          }
-        } catch (e) {
-          console.warn(`无法迁移配置文件 ${config.id}:`, e);
-        }
-      }
-    }
-    
-    // 如果有新配置，批量保存到 Storage
-    if (hasNewConfigs) {
-      await chrome.storage.local.set(storageData);
-      console.log('已迁移配置文件到 Chrome Storage');
-    }
-  } catch (error) {
-    console.error('迁移配置文件失败:', error);
-  }
-}
-
-// 填充配置选择下拉框
 function populateConfigSelect() {
   const select = document.getElementById('configSelect');
-  const description = document.getElementById('configDescription');
-  
   select.innerHTML = '';
-  
-  if (!configsIndex || !configsIndex.configs) {
+
+  if (!configsIndex || !configsIndex.configs || configsIndex.configs.length === 0) {
     select.innerHTML = '<option value="">无可用配置</option>';
     return;
   }
 
-  configsIndex.configs.forEach(config => {
+  configsIndex.configs.forEach((config) => {
     const option = document.createElement('option');
     option.value = config.id;
     option.textContent = config.name;
     select.appendChild(option);
   });
 
-  // 设置默认配置
   const defaultConfigId = configsIndex.default || configsIndex.configs[0]?.id;
   if (defaultConfigId) {
     select.value = defaultConfigId;
     updateConfigDescription(defaultConfigId);
   }
 
-  // 监听配置选择变化
-  select.addEventListener('change', (e) => {
-    updateConfigDescription(e.target.value);
-  });
+  updateRecordingButtonLabel();
 }
 
-// 加载配置文件（优先从 Chrome Storage，如果没有则从文件系统加载）
-async function loadConfigFile(configId) {
-  try {
-    // 优先从 Chrome Storage 加载
-    const result = await chrome.storage.local.get([`config_${configId}`]);
-    if (result[`config_${configId}`]) {
-      return result[`config_${configId}`];
-    }
-
-    // 如果 Storage 中没有，从文件系统加载
-    const config = configsIndex?.configs?.find(c => c.id === configId);
-    if (!config) {
-      throw new Error('配置不存在');
-    }
-
-    const response = await fetch(config.file);
-    if (!response.ok) {
-      throw new Error('无法加载配置文件');
-    }
-    const configData = await response.json();
-    
-    // 保存到 Chrome Storage（下次可以直接使用）
-    await chrome.storage.local.set({ [`config_${configId}`]: configData });
-    
-    return configData;
-  } catch (error) {
-    console.error('加载配置文件失败:', error);
-    throw error;
-  }
-}
-
-// 更新配置描述
 async function updateConfigDescription(configId) {
   const description = document.getElementById('configDescription');
-  const config = configsIndex?.configs?.find(c => c.id === configId);
-  
+  const config = configsIndex?.configs?.find((c) => c.id === configId);
+
   if (config && config.description) {
     description.textContent = config.description;
-    description.style.display = 'block';
+    description.hidden = false;
   } else {
-    description.style.display = 'none';
+    description.hidden = true;
   }
-  
-  // 如果配置改变，重新生成表单字段
+
   if (configId && config) {
     try {
-      const configData = await loadConfigFile(configId);
-      currentConfig = configData;
-      generateFormFields();
+      currentConfig = await WebFormStorage.getConfig(configId);
+      await generateFormFields();
     } catch (error) {
       console.error('加载配置失败:', error);
     }
   }
-  
-  return Promise.resolve();
 }
 
-// 提交按钮事件
 document.getElementById('submitButton').addEventListener('click', async () => {
   const configSelect = document.getElementById('configSelect');
   const selectedConfigId = configSelect.value;
 
-  // 验证配置选择
   if (!selectedConfigId) {
     showMessage('请先选择一个配置', 'error');
     return;
   }
 
   try {
-    // 加载选中的配置
-    currentConfig = await loadConfigFile(selectedConfigId);
-
-    // 处理表单输入
+    currentConfig = await WebFormStorage.getConfig(selectedConfigId);
     await processFormInput();
-
   } catch (error) {
     console.error('处理失败:', error);
     showMessage('处理失败: ' + error.message, 'error');
   }
 });
 
-// 处理表单输入
 async function processFormInput() {
-  const formData = {};
-  const fields = document.querySelectorAll('#formFields input');
-  
-  fields.forEach(field => {
-    const key = field.name;
-    formData[key] = field.value || '';
-  });
+  const formData = collectFormData();
 
-  // 验证必填字段（可以根据需要添加）
-  const hasData = Object.values(formData).some(val => val.trim() !== '');
+  const hasData = Object.values(formData).some((val) => String(val).trim() !== '');
   if (!hasData) {
     throw new Error('请至少填写一个字段');
   }
 
-  // 映射数据字段
   const mappedData = mapData(formData, currentConfig.mappings);
-
-  // 填充表单（单条数据）
-  fillFormOnPage([mappedData], currentConfig.fieldMappings);
-
-  showMessage('表单填充成功', 'success');
+  const fieldHints = buildFieldHints(currentConfig);
+  const result = await fillFormOnPage([mappedData], currentConfig.fieldMappings, fieldHints);
+  showFillResult(result);
 }
 
-// 将数据映射到目标字段
+function buildFieldHints(config) {
+  const hints = {};
+  if (!config?.mappings) return hints;
+
+  Object.entries(config.mappings).forEach(([key, label]) => {
+    hints[label] = WebFormFieldType.resolveMeta(config, key, label);
+  });
+  return hints;
+}
+
 function mapData(entry, mappings) {
   const mappedEntry = {};
-  Object.keys(mappings).forEach(key => {
+  Object.keys(mappings).forEach((key) => {
     mappedEntry[mappings[key]] = entry[key];
   });
   return mappedEntry;
 }
 
-// 在页面上填充表单
-function fillFormOnPage(jsonData, fieldMappings) {
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-    if (!tabs[0]) {
-      throw new Error('无法获取当前标签页');
-    }
-
-    chrome.scripting.executeScript({
-      target: { tabId: tabs[0].id },
-      function: fillForm,
-      args: [jsonData, fieldMappings]
-    }, (results) => {
-      if (chrome.runtime.lastError) {
-        console.error('执行脚本失败:', chrome.runtime.lastError);
-        showMessage('执行脚本失败: ' + chrome.runtime.lastError.message, 'error');
-      }
-    });
-  });
+async function getActiveTab() {
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0] || null;
 }
 
-// 填充表单函数（将在页面上下文中执行）
-function fillForm(data, fieldMappings) {
-  let successCount = 0;
-  let errorCount = 0;
-  const errors = [];
+function isFillableUrl(url) {
+  if (!url) return false;
+  return !url.startsWith('chrome://')
+    && !url.startsWith('chrome-extension://')
+    && !url.startsWith('edge://')
+    && !url.startsWith('about:');
+}
 
-  data.forEach((entry, index) => {
-    Object.keys(entry).forEach(key => {
-      const xpath = fieldMappings[key];
-      if (!xpath) {
-        console.warn(`字段 "${key}" 没有对应的 XPath 映射`);
-        return;
-      }
+async function updateSubmitButtonState() {
+  const submitButton = document.getElementById('submitButton');
+  const startRecordingBtn = document.getElementById('startRecordingBtn');
+  if (!submitButton) return;
 
-      try {
-        const result = document.evaluate(
-          xpath,
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null
-        );
-
-        if (result.singleNodeValue) {
-          const element = result.singleNodeValue;
-          element.value = entry[key] || '';
-
-          // 触发 input 事件
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          // 触发 change 事件
-          element.dispatchEvent(new Event('change', { bubbles: true }));
-
-          successCount++;
-        } else {
-          const errorMsg = `未找到 XPath: ${xpath} (字段: ${key})`;
-          console.error(errorMsg);
-          errors.push(errorMsg);
-          errorCount++;
-        }
-      } catch (error) {
-        const errorMsg = `XPath 执行错误: ${xpath} - ${error.message}`;
-        console.error(errorMsg);
-        errors.push(errorMsg);
-        errorCount++;
-      }
-    });
-  });
-
-  // 在控制台输出结果
-  console.log(`表单填充完成: 成功 ${successCount} 个字段, 失败 ${errorCount} 个字段`);
-  if (errors.length > 0) {
-    console.warn('填充错误详情:', errors);
+  const tab = await getActiveTab();
+  const canFill = tab && isFillableUrl(tab.url);
+  submitButton.disabled = !canFill;
+  submitButton.title = canFill ? '' : '请先打开要填充的目标网页';
+  if (startRecordingBtn) {
+    startRecordingBtn.disabled = !canFill;
+    startRecordingBtn.title = canFill ? '' : '请先打开要录制的目标网页';
   }
 }
 
-// 设置配置类型操作按钮
+function setupRecording() {
+  const startBtn = document.getElementById('startRecordingBtn');
+  const stopBtn = document.getElementById('stopRecordingBtn');
+
+  if (startBtn) {
+    startBtn.addEventListener('click', startRecording);
+  }
+  if (stopBtn) {
+    stopBtn.addEventListener('click', stopRecording);
+  }
+}
+
+function setRecordingButtons(recording) {
+  const startBtn = document.getElementById('startRecordingBtn');
+  const stopBtn = document.getElementById('stopRecordingBtn');
+  if (startBtn) startBtn.hidden = recording;
+  if (stopBtn) stopBtn.hidden = !recording;
+}
+
+async function updateRecordingButtonState() {
+  const tab = await getActiveTab();
+  const startBtn = document.getElementById('startRecordingBtn');
+  if (!tab || !isFillableUrl(tab.url) || !startBtn) return;
+
+  try {
+    const status = await chrome.tabs.sendMessage(tab.id, { action: 'GET_RECORDING_STATUS' });
+    setRecordingButtons(!!status?.active);
+  } catch (e) {
+    setRecordingButtons(false);
+  }
+}
+
+async function startRecording() {
+  const tab = await getActiveTab();
+  if (!tab || !isFillableUrl(tab.url)) {
+    showMessage('请先打开要录制的目标网页', 'error');
+    return;
+  }
+
+  const configSelect = document.getElementById('configSelect');
+  const selectedConfigId = configSelect?.value || '';
+  let baseConfig = null;
+
+  if (selectedConfigId) {
+    baseConfig = await WebFormStorage.getConfig(selectedConfigId);
+    if (!baseConfig) {
+      showMessage('无法加载当前配置', 'error');
+      return;
+    }
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: [
+        'shared/locator.js',
+        'shared/dom-label.js',
+        'shared/field-key.js',
+        'shared/field-type.js',
+        'content/recorder.js'
+      ]
+    });
+
+    await chrome.tabs.sendMessage(tab.id, {
+      action: 'START_RECORDING',
+      baseConfig
+    });
+
+    setRecordingButtons(true);
+
+    const hint = baseConfig
+      ? `正在向「${baseConfig.name}」追加字段，请点击新表单元素`
+      : '录制已开始，请在页面中点击表单字段';
+    showMessage(hint, 'success');
+    window.close();
+  } catch (error) {
+    console.error('启动录制失败:', error);
+    showMessage('启动录制失败: ' + error.message, 'error');
+  }
+}
+
+function updateRecordingButtonLabel() {
+  const btn = document.getElementById('startRecordingBtn');
+  const hint = document.getElementById('recordingHint');
+  const configSelect = document.getElementById('configSelect');
+  const hasConfig = configSelect && configSelect.value;
+
+  if (btn) {
+    btn.textContent = hasConfig ? '追加录制' : '录制配置';
+  }
+  if (hint) {
+    hint.textContent = hasConfig
+      ? '在选中模板基础上追加新字段'
+      : '点击页面字段，自动生成 CSS 选择器映射';
+  }
+}
+
+async function stopRecording() {
+  const tab = await getActiveTab();
+  if (!tab) return;
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { action: 'STOP_RECORDING' });
+    showMessage('录制已取消', 'info');
+  } catch (e) {
+    // tab may not have recorder
+  }
+
+  setRecordingButtons(false);
+}
+
+async function fillFormOnPage(jsonData, fieldMappings, fieldHints) {
+  const tab = await getActiveTab();
+  if (!tab) {
+    throw new Error('无法获取当前标签页');
+  }
+  if (!isFillableUrl(tab.url)) {
+    throw new Error('无法在此页面填充，请打开目标网页');
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    files: ['shared/field-type.js', 'shared/fill-engine.js']
+  });
+
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    func: (data, mappings, hints) => window.WebFormFillEngine.fillForm(data, mappings, hints),
+    args: [jsonData, fieldMappings, fieldHints || {}]
+  });
+
+  return results?.[0]?.result || {
+    successCount: 0,
+    errorCount: 0,
+    errors: [],
+    skipped: []
+  };
+}
+
+function showFillResult(result) {
+  lastFillResult = result;
+  const fillResult = document.getElementById('fillResult');
+  if (!fillResult) return;
+
+  const total = result.successCount + result.errorCount;
+  const allFailed = result.successCount === 0 && result.errorCount > 0;
+  const partial = result.successCount > 0 && result.errorCount > 0;
+
+  let statusClass = 'fill-result-success';
+  let summary = `填充完成：成功 ${result.successCount} / 共 ${total} 个字段`;
+
+  if (allFailed) {
+    statusClass = 'fill-result-error';
+    summary = `填充失败：${result.errorCount} 个字段未能填充`;
+    showMessage('表单填充失败', 'error');
+  } else if (partial) {
+    statusClass = 'fill-result-warning';
+    summary = `部分成功：成功 ${result.successCount}，失败 ${result.errorCount}`;
+    showMessage('表单部分填充成功', 'info');
+  } else {
+    showMessage('表单填充成功', 'success');
+  }
+
+  const issues = [...(result.errors || []), ...(result.skipped || [])];
+  let detailsHtml = '';
+  if (issues.length > 0) {
+    const items = issues.map((item) => {
+      const reason = item.reason || '未知错误';
+      const xpath = item.xpath ? ` (${item.xpath})` : '';
+      return `<li><strong>${item.field}</strong>: ${reason}${xpath}</li>`;
+    }).join('');
+    detailsHtml = `
+      <details class="fill-result-details">
+        <summary>查看失败详情 (${issues.length})</summary>
+        <ul>${items}</ul>
+      </details>`;
+  }
+
+  fillResult.className = `fill-result ${statusClass}`;
+  fillResult.innerHTML = `<div class="fill-result-summary">${summary}</div>${detailsHtml}`;
+  fillResult.hidden = false;
+}
+
 function setupConfigTypeActions() {
   const importBtn = document.getElementById('importConfigTypeBtn');
   const importFileInput = document.getElementById('importConfigTypeInput');
@@ -698,22 +1109,13 @@ function setupConfigTypeActions() {
   const deleteBtn = document.getElementById('deleteConfigTypeBtn');
 
   if (importBtn && importFileInput) {
-    importBtn.addEventListener('click', () => {
-      importFileInput.click();
-    });
+    importBtn.addEventListener('click', () => importFileInput.click());
     importFileInput.addEventListener('change', handleImportConfigType);
   }
-
-  if (exportBtn) {
-    exportBtn.addEventListener('click', handleExportConfigType);
-  }
-
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', handleDeleteConfigType);
-  }
+  if (exportBtn) exportBtn.addEventListener('click', handleExportConfigType);
+  if (deleteBtn) deleteBtn.addEventListener('click', handleDeleteConfigType);
 }
 
-// 处理导入配置类型
 async function handleImportConfigType(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -722,30 +1124,13 @@ async function handleImportConfigType(event) {
     const text = await file.text();
     const configData = JSON.parse(text);
 
-    // 验证配置文件格式
     if (!configData.id || !configData.name || !configData.fieldMappings || !configData.mappings) {
       throw new Error('配置文件格式不正确：缺少必要字段（id, name, fieldMappings, mappings）');
     }
 
-    // 生成配置 ID（如果不存在或需要覆盖）
-    const configId = configData.id;
-    const configName = configData.name;
-    const configDescription = configData.description || '';
-
-    // 保存配置文件到 Chrome Storage
-    await chrome.storage.local.set({ [`config_${configId}`]: configData });
-
-    // 更新配置索引（自动保存到 Chrome Storage）
-    await updateConfigsIndexForImport(configId, configName, configDescription);
-
-    showMessage(`配置文件已导入（已自动保存，立即可用）`, 'success');
-    
-    // 重新加载配置索引和列表
-    setTimeout(() => {
-      populateConfigSelect();
-    }, 100);
-
-    // 清空文件输入
+    configsIndex = await WebFormStorage.upsertConfigInIndex(configData);
+    showMessage('配置文件已导入（已自动保存，立即可用）', 'success');
+    populateConfigSelect();
     event.target.value = '';
   } catch (error) {
     console.error('导入配置失败:', error);
@@ -754,84 +1139,6 @@ async function handleImportConfigType(event) {
   }
 }
 
-// 更新配置索引（用于导入）
-async function updateConfigsIndexForImport(configId, configName, configDescription) {
-  try {
-    // 优先从 Chrome Storage 加载
-    let configsIndex;
-    const result = await chrome.storage.local.get(['configsIndex']);
-    
-    if (result.configsIndex) {
-      configsIndex = result.configsIndex;
-    } else {
-      // 如果 Storage 中没有，尝试从文件加载
-      try {
-        const response = await fetch('configs-index.json');
-        if (response.ok) {
-          configsIndex = await response.json();
-        } else {
-          // 如果文件不存在，创建新的索引
-          configsIndex = {
-            configs: [],
-            default: null
-          };
-        }
-      } catch (e) {
-        // 如果文件加载失败，创建新的索引
-        configsIndex = {
-          configs: [],
-          default: null
-        };
-      }
-    }
-
-    // 检查配置是否已存在
-    const existingIndex = configsIndex.configs.findIndex(c => c.id === configId);
-    const newConfigEntry = {
-      id: configId,
-      name: configName,
-      description: configDescription,
-      file: `configs/${configId}.json`
-    };
-
-    if (existingIndex >= 0) {
-      // 更新现有配置
-      configsIndex.configs[existingIndex] = newConfigEntry;
-    } else {
-      // 添加新配置
-      configsIndex.configs.push(newConfigEntry);
-    }
-
-    // 如果没有默认配置，设置第一个为默认
-    if (!configsIndex.default && configsIndex.configs.length > 0) {
-      configsIndex.default = configsIndex.configs[0].id;
-    }
-
-    // 保存到 Chrome Storage（自动更新，无需手动替换文件）
-    await chrome.storage.local.set({ configsIndex: configsIndex });
-    
-    // 更新全局变量
-    configsIndex = configsIndex;
-
-    // 延迟一下，确保配置文件下载完成
-    setTimeout(() => {
-      // 可选：仍然生成更新后的索引文件供下载（用于备份或版本控制）
-      const indexJson = JSON.stringify(configsIndex, null, 2);
-      const blob = new Blob([indexJson], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'configs-index.json';
-      a.click();
-      URL.revokeObjectURL(url);
-    }, 300);
-  } catch (error) {
-    console.error('更新配置索引失败:', error);
-    throw error;
-  }
-}
-
-// 处理导出配置类型
 async function handleExportConfigType() {
   const configSelect = document.getElementById('configSelect');
   const selectedConfigId = configSelect.value;
@@ -842,29 +1149,13 @@ async function handleExportConfigType() {
   }
 
   try {
-    const config = configsIndex.configs.find(c => c.id === selectedConfigId);
-    if (!config) {
+    const configData = await WebFormStorage.getConfig(selectedConfigId);
+    if (!configData) {
       showMessage('配置不存在', 'error');
       return;
     }
 
-    // 加载配置文件
-    const response = await fetch(config.file);
-    if (!response.ok) {
-      throw new Error('无法加载配置文件');
-    }
-    const configData = await response.json();
-
-    // 下载配置文件
-    const jsonText = JSON.stringify(configData, null, 2);
-    const blob = new Blob([jsonText], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedConfigId}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-
+    downloadJson(configData, `${selectedConfigId}.json`);
     showMessage('配置导出成功', 'success');
   } catch (error) {
     console.error('导出配置失败:', error);
@@ -872,7 +1163,6 @@ async function handleExportConfigType() {
   }
 }
 
-// 处理删除配置类型
 async function handleDeleteConfigType() {
   const configSelect = document.getElementById('configSelect');
   const selectedConfigId = configSelect.value;
@@ -883,71 +1173,43 @@ async function handleDeleteConfigType() {
   }
 
   try {
-    const config = configsIndex.configs.find(c => c.id === selectedConfigId);
+    const config = configsIndex.configs.find((c) => c.id === selectedConfigId);
     if (!config) {
       showMessage('配置不存在', 'error');
       return;
     }
 
-    // 确认删除
-    if (!confirm(`确定要删除配置 "${config.name}" 吗？`)) {
-      return;
-    }
+    if (!confirm(`确定要删除配置 "${config.name}" 吗？`)) return;
 
-    // 从索引中移除配置
-    const updatedConfigs = configsIndex.configs.filter(c => c.id !== selectedConfigId);
-    
-    // 如果删除的是默认配置，设置新的默认配置
-    let newDefault = configsIndex.default;
-    if (configsIndex.default === selectedConfigId) {
-      newDefault = updatedConfigs.length > 0 ? updatedConfigs[0].id : null;
-    }
-
-    const updatedIndex = {
-      configs: updatedConfigs,
-      default: newDefault
-    };
-
-    // 从 Chrome Storage 中删除配置文件和索引
-    await chrome.storage.local.remove([`config_${selectedConfigId}`]);
-    await chrome.storage.local.set({ configsIndex: updatedIndex });
-    
-    // 更新全局变量
-    configsIndex = updatedIndex;
-
-    // 可选：仍然生成更新后的索引文件供下载（用于备份或版本控制）
-    const indexJson = JSON.stringify(updatedIndex, null, 2);
-    const blob = new Blob([indexJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'configs-index.json';
-    a.click();
-    URL.revokeObjectURL(url);
-
-    showMessage(`配置已删除（已自动清理）`, 'success');
-    
-    // 重新加载配置索引
-    setTimeout(() => {
-      populateConfigSelect();
-    }, 100);
+    configsIndex = await WebFormStorage.removeConfigFromIndex(selectedConfigId);
+    showMessage('配置已删除（已自动清理）', 'success');
+    populateConfigSelect();
   } catch (error) {
     console.error('删除配置失败:', error);
     showMessage('删除配置失败: ' + error.message, 'error');
   }
 }
 
-// 显示消息
+function downloadJson(data, filename) {
+  const jsonText = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonText], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function showMessage(message, type = 'info') {
   const messageDiv = document.getElementById('message');
   messageDiv.textContent = message;
   messageDiv.className = `message message-${type}`;
-  messageDiv.style.display = 'block';
+  messageDiv.hidden = false;
 
-  // 3秒后自动隐藏成功消息
   if (type === 'success') {
     setTimeout(() => {
-      messageDiv.style.display = 'none';
+      messageDiv.hidden = true;
     }, 3000);
   }
 }

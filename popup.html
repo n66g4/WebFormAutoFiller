@@ -7,63 +7,77 @@
   <title>WebFormAutoFiller</title>
 </head>
 <body>
-  <div class="container">
-    <h2>表单填充工具</h2>
-    
-    <div class="form-group">
-      <div class="config-type-header">
-        <label for="configSelect">📋 选择配置类型:</label>
-        <div class="config-type-actions">
-          <button id="importConfigTypeBtn" class="small-button" title="导入配置">📥</button>
-          <button id="exportConfigTypeBtn" class="small-button" title="导出配置">📤</button>
-          <button id="deleteConfigTypeBtn" class="small-button" title="删除配置">🗑️</button>
+  <div class="app">
+    <header class="app-header">
+      <div class="app-brand">
+        <span class="app-logo">W</span>
+        <div>
+          <h1 class="app-title">表单填充</h1>
+          <p class="app-subtitle">WebFormAutoFiller</p>
         </div>
       </div>
-      <input type="file" id="importConfigTypeInput" accept=".json" style="display: none;">
-      <select id="configSelect">
+    </header>
+
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title">表单模板</h2>
+        <div class="icon-btn-group">
+          <button id="importConfigTypeBtn" class="icon-btn" type="button" title="导入配置">导入</button>
+          <button id="exportConfigTypeBtn" class="icon-btn" type="button" title="导出配置">导出</button>
+          <button id="deleteConfigTypeBtn" class="icon-btn icon-btn-danger" type="button" title="删除配置">删除</button>
+        </div>
+      </div>
+      <input type="file" id="importConfigTypeInput" accept=".json" hidden>
+      <select id="configSelect" class="select">
         <option value="">加载中...</option>
       </select>
-      <div id="configDescription" class="config-description"></div>
-      <div class="field-hint">选择要填充的表单类型（如：流程环节、法律信息等）</div>
-    </div>
+      <div id="configDescription" class="config-description" hidden></div>
+      <p class="hint">选择字段映射配置，决定填充哪些表单项</p>
+    </section>
 
-    <!-- 表单填写区域 -->
-    <div id="formInputMode" class="input-mode-content">
-      <!-- 保存/加载配置区域 -->
-      <div class="saved-configs-section">
-        <div class="saved-configs-header">
-          <label>💾 表单数据:</label>
-          <div class="saved-configs-actions">
-            <button id="saveConfigBtn" class="small-button" title="保存表单数据">💾</button>
-            <button id="importConfigBtn" class="small-button" title="导入表单数据">📥</button>
-            <button id="exportConfigBtn" class="small-button" title="导出表单数据">📤</button>
-            <button id="deleteConfigBtn" class="small-button" title="删除表单数据">🗑️</button>
-          </div>
-        </div>
-        <input type="file" id="importFileInput" accept=".json" style="display: none;">
-        <select id="savedConfigsSelect" class="saved-configs-select">
-          <option value="">-- 选择已保存的表单数据（快速填充） --</option>
-        </select>
-        <div class="field-hint">选择之前保存的表单数据，可快速填充到下方表单中</div>
-      </div>
-
-      <!-- 操作按钮区域 -->
-      <div class="action-buttons-section">
-        <button id="submitButton" class="submit-button">开始填充</button>
-        <div class="help-link">
-          <a id="configParserLink" href="#" target="_blank">🔧 配置解析工具</a>
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title">填写记录</h2>
+        <div class="icon-btn-group">
+          <button id="saveConfigBtn" class="icon-btn" type="button" title="保存">保存</button>
+          <button id="importConfigBtn" class="icon-btn" type="button" title="导入">导入</button>
+          <button id="exportConfigBtn" class="icon-btn" type="button" title="导出">导出</button>
+          <button id="deleteConfigBtn" class="icon-btn icon-btn-danger" type="button" title="删除">删除</button>
         </div>
       </div>
-      
-      <div id="formFields" class="form-fields">
-        <!-- 动态生成的表单字段 -->
-      </div>
-    </div>
+      <input type="file" id="importFileInput" accept=".json" hidden>
+      <select id="savedConfigsSelect" class="select">
+        <option value="">选择已保存的填写记录…</option>
+      </select>
+      <p class="hint">快速载入历史填写内容到下方表单</p>
+    </section>
 
-    <!-- 成功/错误信息显示区域 -->
-    <div id="message" class="message"></div>
+    <section class="card card-actions">
+      <div class="btn-row">
+        <button id="submitButton" class="btn btn-primary" type="button">开始填充</button>
+        <button id="startRecordingBtn" class="btn btn-secondary" type="button">录制配置</button>
+      </div>
+      <button id="stopRecordingBtn" class="btn btn-danger btn-block" type="button" hidden>停止录制</button>
+      <p class="hint" id="recordingHint">在当前页面点击字段，自动生成 CSS 选择器映射</p>
+      <div id="fillResult" class="fill-result" hidden></div>
+      <a id="configParserLink" class="text-link" href="#" target="_blank">打开配置解析工具</a>
+    </section>
+
+    <section class="card card-fields">
+      <div class="card-header">
+        <h2 class="card-title">填写内容</h2>
+        <button id="copyDiagnosticsBtn" class="icon-btn" type="button" title="生成并复制诊断日志">诊断</button>
+      </div>
+      <div id="formFields" class="form-fields"></div>
+      <textarea id="diagnosticsOutput" class="diagnostics-output" readonly hidden placeholder="诊断日志将显示在这里…"></textarea>
+      <p class="hint" id="diagnosticsHint">字段识别异常时，点击「诊断」复制日志发给开发者</p>
+    </section>
+
+    <div id="message" class="toast" hidden></div>
   </div>
 
+  <script src="shared/storage.js"></script>
+  <script src="shared/field-type.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

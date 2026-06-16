@@ -423,7 +423,8 @@
 
     <button id="parseBtn">解析页面</button>
     <button id="generateJsonBtn" class="secondary" disabled>生成 JSON 配置</button>
-    <button id="downloadBtn" class="secondary" disabled>下载配置文件（自动更新索引）</button>
+    <button id="importConfigBtn" class="secondary" disabled>导入到扩展</button>
+    <button id="downloadBtn" class="secondary" disabled>下载配置文件</button>
 
     <div id="message"></div>
 
@@ -445,6 +446,11 @@
     </div>
   </div>
 
+  <script src="shared/storage.js"></script>
+  <script src="shared/locator.js"></script>
+  <script src="shared/xpath.js"></script>
+  <script src="shared/dom-label.js"></script>
+  <script src="shared/field-key.js"></script>
   <script src="config-parser.js"></script>
 </body>
 </html>

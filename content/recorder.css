@@ -1,0 +1,291 @@
+:root {
+  --wff-primary: #2563eb;
+  --wff-primary-dark: #1d4ed8;
+  --wff-surface: #ffffff;
+  --wff-border: #e2e8f0;
+  --wff-text: #0f172a;
+  --wff-muted: #64748b;
+  --wff-success: #059669;
+  --wff-danger: #dc2626;
+}
+
+#__wff-recorder-root * {
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+#__wff-recorder-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  background: var(--wff-surface);
+  color: var(--wff-text);
+  border: 1px solid var(--wff-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 280px;
+}
+
+#__wff-recorder-status {
+  flex: 1;
+  color: var(--wff-muted);
+  font-size: 12px;
+}
+
+#__wff-recorder-bar button {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.15s, transform 0.1s;
+}
+
+#__wff-recorder-bar button:active {
+  transform: scale(0.97);
+}
+
+#__wff-recorder-bar .wff-btn-finish {
+  background: var(--wff-success);
+  color: #fff;
+}
+
+#__wff-recorder-bar .wff-btn-finish:hover {
+  background: #047857;
+}
+
+#__wff-recorder-bar .wff-btn-cancel {
+  background: #f1f5f9;
+  color: var(--wff-muted);
+  border: 1px solid var(--wff-border);
+}
+
+#__wff-recorder-bar .wff-btn-cancel:hover {
+  background: #e2e8f0;
+  color: var(--wff-text);
+}
+
+#__wff-recorder-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 300px;
+  max-height: 70vh;
+  z-index: 2147483646;
+  background: var(--wff-surface);
+  border: 1px solid var(--wff-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#__wff-recorder-panel .wff-panel-header {
+  padding: 12px 14px;
+  background: #f8fafc;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--wff-text);
+  border-bottom: 1px solid var(--wff-border);
+  letter-spacing: 0.02em;
+}
+
+#__wff-recorder-panel .wff-field-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  max-height: 260px;
+}
+
+.wff-field-item {
+  padding: 10px;
+  margin-bottom: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid var(--wff-border);
+  font-size: 11px;
+  position: relative;
+}
+
+.wff-field-item .wff-field-label {
+  font-weight: 600;
+  color: var(--wff-text);
+  margin-bottom: 4px;
+  padding-right: 20px;
+  font-size: 12px;
+}
+
+.wff-field-item .wff-field-locator {
+  color: var(--wff-muted);
+  word-break: break-all;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.wff-field-item .wff-field-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #fff;
+  border: 1px solid var(--wff-border);
+  color: var(--wff-muted);
+  cursor: pointer;
+  font-size: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.wff-field-item .wff-field-remove:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: var(--wff-danger);
+}
+
+#__wff-recorder-panel .wff-panel-hint {
+  padding: 10px 14px;
+  font-size: 11px;
+  color: var(--wff-muted);
+  background: #f8fafc;
+  border-top: 1px solid var(--wff-border);
+  line-height: 1.4;
+}
+
+#__wff-recorder-finish {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2147483647;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background: var(--wff-surface);
+  border: 1px solid var(--wff-border);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+}
+
+#__wff-recorder-finish h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--wff-text);
+}
+
+#__wff-recorder-finish p {
+  line-height: 1.45;
+}
+
+#__wff-recorder-finish label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wff-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 14px 0 6px;
+}
+
+#__wff-recorder-finish input,
+#__wff-recorder-finish textarea {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--wff-border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--wff-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#__wff-recorder-finish input:focus,
+#__wff-recorder-finish textarea:focus {
+  outline: none;
+  border-color: var(--wff-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+#__wff-recorder-finish input:disabled {
+  background: #f1f5f9;
+  color: var(--wff-muted);
+}
+
+#__wff-recorder-finish textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+#__wff-recorder-finish .wff-finish-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+#__wff-recorder-finish .wff-finish-actions button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#__wff-recorder-finish .wff-btn-save {
+  background: var(--wff-primary);
+  color: #fff;
+}
+
+#__wff-recorder-finish .wff-btn-save:hover {
+  background: var(--wff-primary-dark);
+}
+
+#__wff-recorder-finish .wff-btn-back {
+  background: #f1f5f9;
+  color: var(--wff-text);
+  border: 1px solid var(--wff-border);
+}
+
+#__wff-recorder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.wff-field-item.wff-field-existing {
+  background: #f1f5f9;
+  border-style: dashed;
+}
+
+.wff-field-item.wff-field-existing .wff-field-label {
+  color: var(--wff-muted);
+}
+
+.__wff-recorder-highlight {
+  outline: 2px solid var(--wff-primary) !important;
+  outline-offset: 2px;
+  background-color: rgba(37, 99, 235, 0.08) !important;
+}
+
+.__wff-recorder-hover {
+  outline: 2px dashed var(--wff-success) !important;
+  outline-offset: 2px;
+  cursor: crosshair !important;
+}
