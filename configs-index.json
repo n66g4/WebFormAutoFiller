@@ -1,17 +1,4 @@
 {
-  "configs": [
-    {
-      "id": "process-steps",
-      "name": "流程环节配置",
-      "description": "用于填充流程环节相关表单（收件、受理、审查、决定、制证、送达）",
-      "file": "configs/process-steps.json"
-    },
-    {
-      "id": "legal-info",
-      "name": "法律信息配置",
-      "description": "用于填充法律相关信息表单（权力来源、责任事项、处罚信息等）",
-      "file": "configs/legal-info.json"
-    }
-  ],
-  "default": "process-steps"
+  "configs": [],
+  "default": null
 }

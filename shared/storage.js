@@ -122,37 +122,6 @@ const WebFormStorage = {
       index.configs = [];
     }
 
-    const defaultFiles = [
-      { id: 'process-steps', file: 'configs/process-steps.json' },
-      { id: 'legal-info', file: 'configs/legal-info.json' }
-    ];
-
-    for (const def of defaultFiles) {
-      const inIndex = index.configs.some((c) => c.id === def.id);
-      const stored = await chrome.storage.local.get([`config_${def.id}`]);
-
-      if (!inIndex || !stored[`config_${def.id}`]) {
-        try {
-          const response = await fetch(chrome.runtime.getURL(def.file));
-          if (!response.ok) continue;
-
-          const configData = await response.json();
-          await this.saveConfig(def.id, configData);
-
-          if (!inIndex) {
-            index.configs.push({
-              id: def.id,
-              name: configData.name,
-              description: configData.description || '',
-              file: def.file
-            });
-          }
-        } catch (e) {
-          console.warn(`迁移配置 ${def.id} 失败:`, e);
-        }
-      }
-    }
-
     if (!index.default && index.configs.length > 0) {
       index.default = index.configs[0].id;
     }
