@@ -1,219 +1,236 @@
-# 🚀 WebFormAutoFiller
+# WebFormAutoFiller
 
-一个功能强大的 Chrome 扩展，用于自动填充网页表单。支持配置化表单字段映射、表单数据保存、配置导入导出等功能。
+Chrome 扩展（Manifest V3），用于按配置自动填充网页表单。支持字段录制、按类型渲染填写控件、Element Plus / Ant Design 等常见 UI 组件，以及诊断日志导出。
 
-## ✨ 功能特性
+**当前版本：v1.3**
 
-### 🎯 核心功能
-- **自动表单填充** - 一键填充网页表单，支持所有常见的表单元素
-- **配置化管理** - 通过 JSON 配置文件定义表单字段映射关系
-- **数据持久化** - 使用 Chrome Storage 存储配置和表单数据，无需手动管理文件
-- **配置解析工具** - 内置工具可从 MHTML 文件自动解析表单字段并生成配置
+## 功能特性
 
-### 📋 配置管理
-- ✅ **导入配置** - 支持导入 JSON 格式的配置文件
-- ✅ **导出配置** - 导出当前配置为 JSON 文件
-- ✅ **删除配置** - 一键删除不需要的配置
-- ✅ **自动更新索引** - 配置索引自动更新，无需手动维护
+### 表单填充
 
-### 💾 表单数据管理
-- ✅ **保存表单数据** - 保存当前填写的表单数据，方便下次快速填充
-- ✅ **导入表单数据** - 从 JSON 文件导入之前保存的表单数据
-- ✅ **导出表单数据** - 导出表单数据为 JSON 文件，便于备份和分享
-- ✅ **删除表单数据** - 删除不需要的表单数据
+- 一键填充当前页面表单
+- 支持文本、数字、日期、单选、下拉、多选、复选框等控件
+- 兼容 Element Plus、Ant Design 等组件库（单选组、下拉、日期选择器、日期范围）
+- 定位策略：标签 XPath 优先，CSS / 绝对 XPath 作为备用
 
-### 🔧 配置解析工具
-- ✅ **MHTML 解析** - 从 MHTML 文件自动解析表单字段
-- ✅ **可视化预览** - 实时预览解析的页面内容
-- ✅ **元素选择** - 通过点击预览页面选择需要填充的表单元素
-- ✅ **XPath 生成** - 自动生成精确的 XPath 定位路径
-- ✅ **配置生成** - 自动生成完整的 JSON 配置文件
+### 配置与数据
 
-## 📦 安装方法
+- 表单模板（字段映射配置）的导入、导出、删除
+- 填写记录的保存、导入、导出、删除
+- 数据存储在 `chrome.storage.local`，无需手动维护本地文件
 
-### 从源码安装
+### 页面录制（v1.3）
 
-1. **克隆仓库**
-   ```bash
-   git clone https://github.com/your-username/WebFormAutoFiller.git
-   cd WebFormAutoFiller
-   ```
+- 在目标页面点击表单字段，自动生成定位器与字段类型
+- 自动识别单选、多选、下拉、日期等控件，并采集选项列表
+- 支持在已有配置上追加字段
 
-2. **加载扩展**
-   - 打开 Chrome 浏览器
-   - 访问 `chrome://extensions/`
-   - 开启右上角的"开发者模式"
-   - 点击"加载已解压的扩展程序"
-   - 选择项目文件夹
+### 智能填写界面（v1.3）
 
-3. **开始使用**
-   - 扩展安装完成后，点击浏览器工具栏中的扩展图标
-   - 首次使用会自动加载默认配置
+- Popup 根据字段类型渲染对应控件（单选按钮、下拉框、日期输入等）
+- 打开 Popup 时从页面实时读取选项，与配置合并显示
+- 填充结果按字段汇总成功 / 失败原因
 
-## 🎮 使用指南
+### 诊断日志（v1.3）
 
-### 基本使用流程
-
-1. **选择配置类型**
-   - 打开扩展弹出窗口
-   - 从下拉菜单中选择要使用的配置类型
-   - 查看配置描述了解该配置的用途
-
-2. **填写表单数据**
-   - 在表单字段中输入要填充的数据
-   - 支持文本、数字等常见输入类型
-
-3. **保存表单数据（可选）**
-   - 点击"💾 保存"按钮
-   - 输入配置名称
-   - 数据将保存到 Chrome Storage
-
-4. **填充表单**
-   - 打开要填充的网页
-   - 点击扩展图标
-   - 选择已保存的表单数据（或直接填写）
-   - 点击"开始填充"按钮
-   - 表单将自动填充完成
-
-### 配置管理
-
-#### 导入配置
-1. 点击配置类型区域的"📥 导入配置"按钮
-2. 选择 JSON 格式的配置文件
-3. 配置将自动保存并立即可用
-
-#### 导出配置
-1. 选择要导出的配置类型
-2. 点击"📤 导出配置"按钮
-3. 配置文件将自动下载
-
-#### 删除配置
-1. 选择要删除的配置类型
-2. 点击"🗑️ 删除配置"按钮
-3. 确认删除操作
+- 点击「诊断」生成并复制完整调试报告
+- 包含页面探测、字段匹配步骤、选项采集、上次填充结果等
+- 字段识别异常时可发给开发者排查
 
 ### 配置解析工具
 
-#### 从 MHTML 文件生成配置
+- 从 MHTML 文件解析表单结构
+- 可视化预览与元素点选
+- 生成 XPath 与 JSON 配置
 
-1. **打开配置解析工具**
-   - 在扩展弹出窗口中点击"🔧 配置解析工具"链接
+## 安装
 
-2. **上传 MHTML 文件**
-   - 点击"选择 MHTML 文件"按钮
-   - 选择要解析的 MHTML 文件
+```bash
+git clone https://github.com/n66g4/WebFormAutoFiller.git
+cd WebFormAutoFiller
+```
 
-3. **解析页面**
-   - 点击"解析页面"按钮
-   - 等待解析完成
+1. 打开 Chrome，访问 `chrome://extensions/`
+2. 开启「开发者模式」
+3. 点击「加载已解压的扩展程序」，选择项目目录
+4. 点击工具栏图标即可使用
 
-4. **选择表单元素**
-   - 点击"开始选择元素"按钮进入选择模式
-   - 在预览页面中点击要填充的表单元素
-   - 元素将自动添加到"检测到的表单字段"列表
+## 使用指南
 
-5. **编辑字段信息**
-   - 在字段列表中编辑字段名称（中文）
-   - 选择要包含在配置中的字段（复选框）
+### 基本流程
 
-6. **生成配置**
-   - 填写配置名称和描述
-   - 点击"生成 JSON 配置"按钮
-   - 查看生成的配置内容
+1. 打开目标网页（表单页面）
+2. 点击扩展图标，选择「表单模板」
+3. 在「填写内容」区域输入或选择各字段值
+4. 点击「开始填充」
 
-7. **下载配置**
-   - 点击"下载配置"按钮
-   - 配置文件将自动下载
-   - 同时会下载更新后的配置索引文件
+可选：点击「保存」将当前填写内容存为记录，下次快速载入。
 
-## 📁 项目结构
+### 录制配置
+
+适用于 Element Plus 等动态页面，比 MHTML 解析更准确。
+
+1. 打开目标表单页面
+2. 在 Popup 中点击「录制配置」
+3. 依次点击页面上的表单字段（单选组、下拉、日期等会自动识别整组控件）
+4. 点击「完成」保存配置
+5. 可在 Popup 中导出 JSON 备份
+
+### 诊断
+
+当某字段填充失败或 Popup 控件类型不对时：
+
+1. 保持目标页面打开
+2. 在 Popup「填写内容」区域点击「诊断」
+3. 日志会自动复制到剪贴板
+4. 将日志发给开发者或自行对照 `probedMeta`、`lastFillResult` 排查
+
+### 配置解析工具
+
+1. 在 Popup 中点击「打开配置解析工具」
+2. 上传 MHTML 文件并解析
+3. 点选需要映射的表单元素
+4. 生成并下载 JSON 配置
+
+## 项目结构
 
 ```
 WebFormAutoFiller/
-├── manifest.json          # Chrome 扩展清单文件
-├── popup.html             # 扩展弹出窗口页面
-├── popup.js               # 弹出窗口逻辑
-├── config-parser.html     # 配置解析工具页面
-├── config-parser.js       # 配置解析工具逻辑
-├── background.js          # 后台服务脚本
-├── styles.css             # 样式文件
-├── configs/               # 初始配置文件（自动迁移到 Storage）
-│   ├── process-steps.json
-│   └── legal-info.json
-└── icon*.png             # 扩展图标
+├── manifest.json           # 扩展清单（v1.3）
+├── popup.html / popup.js   # 主界面：填充、录制、诊断
+├── config-parser.html/js   # MHTML 配置解析工具
+├── background.js           # 后台消息与录制状态
+├── styles.css
+├── configs-index.json      # 内置配置索引（首次安装迁移用）
+├── content/
+│   ├── recorder.js         # 页面录制器
+│   └── recorder.css
+├── shared/
+│   ├── fill-engine.js      # 页面填充引擎
+│   ├── field-type.js       # 字段类型检测与选项采集
+│   ├── locator.js          # 定位器生成与解析
+│   ├── diagnostics.js      # 诊断报告
+│   ├── storage.js          # Chrome Storage 封装
+│   ├── dom-label.js        # 标签文本处理
+│   ├── field-key.js        # 字段键生成
+│   └── xpath.js            # XPath 工具
+└── icon*.png
 ```
 
-## ⚙️ 配置文件格式
+## 配置文件格式
 
-### 配置文件结构
+### 完整示例
 
 ```json
 {
-  "id": "config-id",
-  "name": "配置名称",
-  "description": "配置描述",
+  "id": "new-config",
+  "name": "登记业务",
+  "description": "企业登记相关表单",
   "mappings": {
-    "FIELD_KEY": "字段中文名称",
-    "SJR": "收件办理人",
-    "SLR": "受理办理人"
+    "DH": "移动电话",
+    "LRLX": "代理人类型",
+    "FIELD3": "代表或接受委托的有效期限",
+    "FIELD4": "领取执照方式",
+    "MC": "是否通过名称申办流水号引入"
+  },
+  "fieldMeta": {
+    "DH": { "type": "text", "options": [] },
+    "LRLX": {
+      "type": "radio",
+      "options": ["登记代理人", "登记联络员", "投资人"]
+    },
+    "FIELD3": { "type": "date", "options": [] },
+    "FIELD4": {
+      "type": "select",
+      "options": ["窗口领取"]
+    },
+    "MC": {
+      "type": "radio",
+      "options": ["是", "否"]
+    }
   },
   "fieldMappings": {
-    "字段中文名称": "/html/body/.../input",
-    "收件办理人": "/html/body/div[1]/form/input[1]"
+    "移动电话": {
+      "labelText": "移动电话",
+      "strategy": "label-xpath",
+      "primary": "//div[contains(@class,\"el-form-item\")][.//*[contains(@class,\"el-form-item__label\") and contains(normalize-space(.), '移动电话')]]//input[not(@type=\"hidden\")][1]",
+      "fallback": "input[placeholder=\"请输入内容\"]"
+    },
+    "代理人类型": {
+      "labelText": "代理人类型",
+      "strategy": "label-xpath",
+      "primary": "//div[contains(@class,\"el-form-item\")][.//*[contains(@class,\"el-form-item__label\") and contains(normalize-space(.), '代理人类型')]]//div[contains(@class,\"el-radio-group\")][1]",
+      "fallback": "/html/body/.../div[contains(@class,\"el-radio-group\")]"
+    }
   }
 }
 ```
 
 ### 字段说明
 
-- `id`: 配置的唯一标识符
-- `name`: 配置的显示名称
-- `description`: 配置的详细描述
-- `mappings`: 字段键到中文名称的映射（用于表单显示）
-- `fieldMappings`: 中文名称到 XPath 的映射（用于定位表单元素）
+| 字段 | 说明 |
+|------|------|
+| `id` | 配置唯一标识 |
+| `name` | 显示名称 |
+| `description` | 配置描述（可选） |
+| `mappings` | 字段键 → 中文标签（Popup 显示与填充映射） |
+| `fieldMeta` | 字段类型与选项（`text` / `textarea` / `number` / `date` / `radio` / `select` / `multiselect` / `checkbox`） |
+| `fieldMappings` | 中文标签 → 定位器（字符串 XPath/CSS，或带 `primary` / `fallback` / `strategy` 的对象） |
 
-## 🔧 开发说明
+定位器 `strategy` 常用值：
+
+- `label-xpath`：按表单项标签匹配，适合 Element Plus 等动态 ID 页面
+- `xpath` / `css`：直接路径定位
+
+## 开发说明
 
 ### 技术栈
-- **Manifest V3** - Chrome 扩展最新标准
-- **Chrome Storage API** - 数据持久化
-- **Chrome Scripting API** - 脚本注入
-- **原生 JavaScript** - 无外部依赖
 
-### 数据存储
-- 所有配置和表单数据存储在 `chrome.storage.local` 中
-- 首次安装时会自动从 `configs/` 文件夹迁移配置文件
-- 支持导入/导出 JSON 格式的配置文件
+- Manifest V3
+- Chrome Storage / Scripting API
+- 纯 JavaScript，无构建步骤
 
-### 扩展权限
-- `activeTab` - 访问当前活动标签页
-- `scripting` - 注入脚本到页面
-- `storage` - 存储配置和数据
+### 本地校验
 
-## 📝 更新日志
+修改代码后可做语法检查：
+
+```bash
+node --check shared/field-type.js
+node --check shared/fill-engine.js
+node --check popup.js
+node --check content/recorder.js
+```
+
+### 权限
+
+| 权限 | 用途 |
+|------|------|
+| `activeTab` | 访问当前标签页 |
+| `scripting` | 注入填充与探测脚本 |
+| `storage` | 持久化配置与填写记录 |
+
+## 更新日志
+
+### v1.3
+
+- 新增页面录制器，点击字段自动生成配置
+- 新增共享填充引擎，支持 Element Plus 单选、下拉、日期范围
+- Popup 按字段类型渲染控件，并从页面实时读取选项
+- 新增诊断日志导出
+- 定位器支持标签 XPath + 备用选择器
+- 修复单选选项文字误读、短标签误匹配、日期字段误判等问题
 
 ### v1.1
-- ✨ 支持配置导入/导出/删除
-- ✨ 支持表单数据保存/导入/导出
-- ✨ 内置配置解析工具
-- ✨ 从 MHTML 文件自动解析表单字段
-- ✨ 使用 Chrome Storage 存储所有数据
-- 🗑️ 移除 CSV/Excel 支持
-- 🗑️ 移除文件系统依赖
 
-## 🤝 贡献
+- 配置与填写记录的导入 / 导出 / 删除
+- 内置 MHTML 配置解析工具
+- 使用 Chrome Storage 存储数据
+- 移除 CSV/Excel 与文件系统依赖
 
-欢迎提交 Issue 和 Pull Request！
+## 贡献
 
-## 📄 许可证
+欢迎提交 Issue 和 Pull Request。
+
+## 许可证
 
 MIT License
-
-## 🙏 致谢
-
-感谢所有使用和贡献此项目的开发者！
-
----
-
-**⭐ 如果这个项目对你有帮助，请给个 Star！**
-
